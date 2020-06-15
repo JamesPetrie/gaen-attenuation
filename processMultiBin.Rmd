@@ -58,7 +58,7 @@ processExposures <- function(file){
 
 ```{r}
 
-dataFolder = "~/Dropbox/DistanceTests/"
+dataFolder = "./data/DistanceTests/"
 files = list.files(dataFolder)
 
 dt = NULL
@@ -87,7 +87,7 @@ ggplot(dt) + geom_histogram( aes(x = as.factor(MeanAtten), y = Duration, fill = 
 ```
 
 ```{r}
-testScenarios = fread("~/Downloads/3T Contact Tracing Alpha Test Scenarios - Alpha _ Phase 1 Test Scenarios.csv")
+testScenarios = fread("./testScenarios.csv")
 colnames = unlist(unname(llply(testScenarios[2], function(x){str_replace_all(x, fixed(" "), "")})))
 setnames(testScenarios, colnames)
 
