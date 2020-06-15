@@ -1,0 +1,116 @@
+---
+title: "Alpha Test Analysis"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+```{r echo=TRUE}
+require(data.table)
+require(rjson)
+require(plyr)
+require(stringr)
+require(ggplot2)
+
+
+processExposures <- function(file){
+  exposures <- fromJSON(file=file)
+  
+  if("possibleExposures" %in% names(exposures)){
+    exposures = exposures$possibleExposures
+  }
+
+  thresholds = sort(unique(unlist(llply(exposures, function(x){
+    return(x$attenuationDurationThresholds)
+  }))))
+
+  dt = rbindlist(llply(exposures, function(x){
+    newDt = data.table(TimeDetected = x$timeDetected,
+                       MinThresh = x$attenuationDurationThresholds[[1]],
+                       MaxThresh = x$attenuationDurationThresholds[[2]],
+                       Duration = x$attenuationDurations[[2]]
+    )
+    if(x$attenuationDurationThresholds[[1]] == min(thresholds)){
+      minDt = data.table(TimeDetected = x$timeDetected,
+                         MinThresh = 0,
+                         MaxThresh = x$attenuationDurationThresholds[[1]],
+                         Duration = x$attenuationDurations[[1]]
+      )
+      newDt = rbind(minDt, newDt)
+    }
+    if(x$attenuationDurationThresholds[[2]] == max(thresholds)){
+      maxDt = data.table(TimeDetected = x$timeDetected,
+                         MinThresh = x$attenuationDurationThresholds[[2]],
+                         MaxThresh = 128,
+                         Duration = x$attenuationDurations[[3]]
+      )
+      newDt = rbind(newDt, maxDt)
+    }
+
+    return(newDt)
+  }))
+
+  return(dt)
+}
+
+
+```
+
+
+```{r}
+
+dataFolder = "~/Dropbox/DistanceTests/"
+files = list.files(dataFolder)
+
+dt = NULL
+for(file in files){
+  if(grepl("json", file, fixed = TRUE)){
+    newDt = processExposures(file.path(dataFolder, file))
+    testDesc = str_remove(file, ".json")
+    testID = str_split(testDesc, "_")[[1]][1]
+    device = str_split(testDesc, "_")[[1]][2]
+    
+    newDt[, TestID := testID]
+    newDt[, Device := device]
+    if(is.null(dt)){
+      dt = newDt
+    }else{
+      dt = rbind(dt, newDt)
+    }
+  }
+}
+
+
+dt[, MeanAtten := 0.5*(MinThresh + MaxThresh)]
+
+breaks = unique(c(dt$MaxThresh, dt$MinThresh))
+ggplot(dt) + geom_histogram( aes(x = as.factor(MeanAtten), y = Duration, fill = paste(TestID, Device)), stat = "identity") + labs(x="Mean Attenuation (of bin)")
+```
+
+```{r}
+testScenarios = fread("~/Downloads/3T Contact Tracing Alpha Test Scenarios - Alpha _ Phase 1 Test Scenarios.csv")
+colnames = unlist(unname(llply(testScenarios[2], function(x){str_replace_all(x, fixed(" "), "")})))
+setnames(testScenarios, colnames)
+
+
+# Get only the rows with numbers in TestID field
+testScenarios = testScenarios[grepl("\\d", TestID)]
+
+setkey(dt,by = TestID)
+setkey(testScenarios, by = TestID)
+
+dt = merge(dt, testScenarios, all.x = TRUE)
+
+setnames(dt, "Distance(m)", "Distance")
+dt[,Distance:=as.numeric((Distance))]
+
+ggplot(dt[Duration > 0], aes(x= Distance, y = MeanAtten, size =Duration)) + geom_point()
+```
+```{r}
+dtSum = dt[,list(Duration = sum(Duration)), by = list(MinThresh, MaxThresh, Distance)]
+dtSum[ ,MinDist := Distance -0.25]
+dtSum[, MaxDist := Distance + 0.25]
+dtSum[, Area := (MaxDist-MinDist)*(MaxThresh - MinThresh)]
+
+ggplot(dtSum,aes(xmin=MinDist, xmax = MaxDist, ymin = MinThresh, ymax = MaxThresh)) + geom_rect(aes(fill = Duration/Area))
+
+```
