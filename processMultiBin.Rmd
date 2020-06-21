@@ -1,5 +1,7 @@
 ---
 title: "Alpha Test Analysis"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+author: "James Petrie"
 output:
   html_notebook: default
   pdf_document: default
@@ -11,6 +13,7 @@ require(plyr)
 require(stringr)
 require(ggplot2)
 require(readxl)
+require(coefplot)
 ```
 
 ```{r}
@@ -129,10 +132,18 @@ for(rep in 2:max(dt$Rep)){
   dtPoint = rbind(dtPoint, do.call("rbind", replicate(rep, dt[Rep == rep], simplify = FALSE)))
 }
 
-ggplot(dtPoint, aes(x= Distance, y = MeanAtten, colour = Barrier)) + geom_jitter(width = 0.08, size = 2) + ylab("Attenuation [dB]") + xlab("Distance [m]") # + facet_wrap(~Device)
+ggplot(dtPoint, aes(y= Distance, x = MeanAtten, colour = Barrier)) + geom_jitter(height = 0.08, size = 2) + xlab("Attenuation [dB]") + ylab("Distance [m]") # + facet_wrap(~Device)
 ```
 
-```{r, include=FALSE}
+```{r}
+dtPoint[, DistanceFactor := as.factor(Distance)]
+dtPoint[,Barrier := as.factor(Barrier)]
+model = lm(MeanAtten ~  Barrier + DistanceFactor + 0 , data= dtPoint)
+print(model)
+coefplot::coefplot(model)
+```
+
+```{r}
 ggplot(dt) + geom_histogram( aes(x = TestID, y = Duration, fill = Tester), stat = "identity") + labs(x="Test ID")
 ```
 
