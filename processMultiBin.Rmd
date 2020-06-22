@@ -6,132 +6,29 @@ output:
   html_notebook: default
   pdf_document: default
 ---
-```{r echo=TRUE}
+```{r}
 require(data.table)
-require(rjson)
-require(plyr)
-require(stringr)
 require(ggplot2)
-require(readxl)
 require(coefplot)
-```
 
-```{r}
-processExposures <- function(file){
-  exposures <- fromJSON(file=file)
-  
-  if("possibleExposures" %in% names(exposures)){
-    exposures = exposures$possibleExposures
-  }
-
-  thresholds = sort(unique(unlist(llply(exposures, function(x){
-    return(x$attenuationDurationThresholds)
-  }))))
-
-  dt = rbindlist(llply(exposures, function(x){
-    newDt = data.table(TimeDetected = x$timeDetected,
-                       MinThresh = x$attenuationDurationThresholds[[1]],
-                       MaxThresh = x$attenuationDurationThresholds[[2]],
-                       Duration = x$attenuationDurations[[2]]
-    )
-    if(x$attenuationDurationThresholds[[1]] == min(thresholds)){
-      minDt = data.table(TimeDetected = x$timeDetected,
-                         MinThresh = 0,
-                         MaxThresh = x$attenuationDurationThresholds[[1]],
-                         Duration = x$attenuationDurations[[1]]
-      )
-      newDt = rbind(minDt, newDt)
-    }
-    if(x$attenuationDurationThresholds[[2]] == max(thresholds)){
-      maxDt = data.table(TimeDetected = x$timeDetected,
-                         MinThresh = x$attenuationDurationThresholds[[2]],
-                         MaxThresh = 128,
-                         Duration = x$attenuationDurations[[3]]
-      )
-      newDt = rbind(newDt, maxDt)
-    }
-
-    return(newDt)
-  }))
-
-  return(dt)
-}
-
-
-```
-
-```{r}
-processScenarios <- function(scenarioFile){
-  testScenarios = data.table(read_excel(scenarioFile, skip = 1, col_types = "text"))
-  colnames = unlist(unname(llply(names(testScenarios), function(x){str_replace_all(x, fixed(" "), "")})))
-  setnames(testScenarios, colnames)
-  
-  # Get only the rows with numbers in TestID field
-  testScenarios = testScenarios[grepl("\\d", TestID)]
-  return(testScenarios)
-}
-
+source("./util.R")
 ```
 
 
 
 ```{r, results="hide"}
-
 dataFolder = "~/Desktop/OptimalQuarantine/gaen-attenuation/data/Alpha Test Phase 1 Data/"
-testerDirs = list.dirs(dataFolder, recursive = FALSE)
-
-dt = NULL
-for(testerDir in testerDirs){
-  scenarioFile = list.files(testerDir, pattern = "\\.xlsx$", full.names = TRUE)[1]
-  if(is.na(scenarioFile)){
-    print(paste("No scenario file - skipping test directory: ", testerDir))
-    print(paste(as.character(length(list.files(testerDir))), "Other files in the directory"))
-    next
-  }
-  testScenarios = processScenarios(scenarioFile)
-  setkey(testScenarios, by = TestID)
-  
-   for(file in list.files(testerDir)){
-    if(grepl("json", file, fixed = TRUE)){
-      newDt = processExposures(file.path(testerDir, file))
-      testDesc = str_split(str_remove(file, ".json"), "_")[[1]]
-      testID = testDesc[length(testDesc)]
-      device = testDesc[2]
-      tester = testDesc[1]
-      
-      newDt[, TestID := testID]
-      newDt[, Device := device]
-      newDt[, Tester := tester]
-      
-      setkey(newDt,by = TestID)
-      newDt = merge(newDt, testScenarios, all.x = TRUE)
-
-      
-      
-      if(is.null(dt)){
-        dt = newDt
-      }else{
-        dt = rbind(dt, newDt, fill =TRUE)
-      }
-    }
-  }
-
-}
-
-dt[, MeanAtten := 0.5*(MinThresh + MaxThresh)]
-setnames(dt, "Distance(m)", "Distance")
-dt[,Distance:=as.numeric((Distance))]
+dt = combineTestData(dataFolder)
 ```
 
 ```{r}
-dt[, Rep := floor(Duration/300)]
+dt[, DurationTotalSum := DurationBelow + DurationBetween + DurationAbove]
 
-dtPoint = dt[Rep == 1]
+ggplot(dt, aes(x = DurationTotalReported/60, y = DurationTotalSum/60, colour = DurationPlanned)) + geom_jitter(width = 1, height = 1)
+```
 
-for(rep in 2:max(dt$Rep)){
-  dtPoint = rbind(dtPoint, do.call("rbind", replicate(rep, dt[Rep == rep], simplify = FALSE)))
-}
-
+```{r}
+dtPoint = splitMeasurements(dt)
 ggplot(dtPoint, aes(y= Distance, x = MeanAtten, colour = Barrier)) + geom_jitter(height = 0.08, size = 2) + xlab("Attenuation [dB]") + ylab("Distance [m]") # + facet_wrap(~Device)
 ```
 
@@ -142,9 +39,14 @@ model = lm(MeanAtten ~  Barrier + DistanceFactor + 0 , data= dtPoint)
 print(model)
 coefplot::coefplot(model)
 ```
+```{r}
+dtMonte = dtPoint[, list(Attenuation = MeanAtten, Distance, TestScenario, Barrier)]
+fwrite(dtMonte , file = "~/Desktop/OptimalQuarantine/MonteCarloData.csv")
+
+```
 
 ```{r}
-ggplot(dt) + geom_histogram( aes(x = TestID, y = Duration, fill = Tester), stat = "identity") + labs(x="Test ID")
+ggplot(dt) + geom_histogram( aes(x = TestID, y = DurationBetween, fill = Tester), stat = "identity") + labs(x="Test ID")
 ```
 
 
