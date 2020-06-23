@@ -3,6 +3,7 @@ require(data.table)
 require(rjson)
 require(plyr)
 require(stringr)
+require(foreach)
 
 processExposures <- function(file){
   exposures <- fromJSON(file=file)$possibleExposures
@@ -94,6 +95,24 @@ combineTestData = function(dataFolder){
     }
 
   }
+  dtDevices = dt[,list(Device = unique(Device)), by = list(Tester, TestID)]
+
+  for(tester in unique(dtDevices$Tester)){
+    for(testID in unique(dtDevices[Tester == tester, TestID])){
+      for(device in unique(dtDevices[Tester == tester & TestID == testID, Device])){
+        otherDevices = dtDevices[Tester == tester & TestID == testID & Device != device, Device]
+        if(length(otherDevices) == 1){
+          dt[Tester == tester & TestID == testID & Device == device, OtherDevice := otherDevices[1]]
+        }else{
+          print("unable to determine what the other device was")
+          dt[Tester == tester & TestID == testID & Device == device, OtherDevice := NA]
+        }
+      }
+    }
+  }
+
+
+
   return(dt)
 }
 

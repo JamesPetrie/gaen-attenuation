@@ -21,7 +21,7 @@ dataFolder = "~/Desktop/OptimalQuarantine/gaen-attenuation/data/Alpha Test Phase
 dt = combineTestData(dataFolder)
 ```
 
-```{r}
+```{r, include = FALSE}
 dt[, DurationTotalSum := DurationBelow + DurationBetween + DurationAbove]
 
 ggplot(dt, aes(x = DurationTotalReported/60, y = DurationTotalSum/60, colour = DurationPlanned)) + geom_jitter(width = 1, height = 1)
@@ -29,15 +29,31 @@ ggplot(dt, aes(x = DurationTotalReported/60, y = DurationTotalSum/60, colour = D
 
 ```{r}
 dtPoint = splitMeasurements(dt)
-ggplot(dtPoint, aes(y= Distance, x = MeanAtten, colour = Barrier)) + geom_jitter(height = 0.08, size = 2) + xlab("Attenuation [dB]") + ylab("Distance [m]") # + facet_wrap(~Device)
+ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Barrier)) + geom_jitter(height = 0.08, size = 2, alpha = 0.3) + xlab("Attenuation [dB]") + ylab("Distance [m]")
+```
+
+```{r}
+ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Tester)) + geom_jitter(height = 0.08, alpha = 0.5) + xlab("Attenuation [dB]") + ylab("Distance [m]")  + facet_wrap(~Barrier)
+```
+
+```{r}
+ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Device)) + geom_jitter(height = 0.08, alpha = 0.5) + xlab("Attenuation [dB]") + ylab("Distance [m]")  + facet_wrap(~Barrier)
+```
+```{r}
+ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = OtherDevice)) + geom_jitter(height = 0.08, alpha = 0.5) + xlab("Attenuation [dB]") + ylab("Distance [m]")  + facet_wrap(~Barrier)
 ```
 
 ```{r}
 dtPoint[, DistanceFactor := as.factor(Distance)]
 dtPoint[,Barrier := as.factor(Barrier)]
-model = lm(MeanAtten ~  Barrier + DistanceFactor + 0 , data= dtPoint)
+model = lm(MaxThresh ~  Barrier + DistanceFactor + 0 , data= dtPoint)
+modelWithTester = lm(MaxThresh ~  Barrier + DistanceFactor + Tester + 0 , data= dtPoint)
+modelWithDevice = lm(MaxThresh ~  Barrier + DistanceFactor + Device + 0 , data= dtPoint)
 print(model)
+
+ 
 coefplot::coefplot(model)
+coefplot::coefplot(modelWithTester)
 ```
 ```{r}
 dtMonte = dtPoint[, list(Attenuation = MeanAtten, Distance, TestScenario, Barrier)]
@@ -47,6 +63,10 @@ fwrite(dtMonte , file = "~/Desktop/OptimalQuarantine/MonteCarloData.csv")
 
 ```{r}
 ggplot(dt) + geom_histogram( aes(x = TestID, y = DurationBetween, fill = Tester), stat = "identity") + labs(x="Test ID")
+
+dtTests = dt[,list( NumTests = length(unique(TestID))), by = Tester]
+print(dtTests)
+print(sum(dtTests$NumTests))
 ```
 
 
@@ -57,6 +77,6 @@ dtSum[ ,MinDist := Distance -0.25]
 dtSum[, MaxDist := Distance + 0.25]
 dtSum[, Area := (MaxDist-MinDist)*(MaxThresh - MinThresh)]
 
-ggplot(dtSum,aes(xmin=MinDist, xmax = MaxDist, ymin = MinThresh, ymax = MaxThresh)) + geom_rect(aes(fill = Duration/Area))
+#ggplot(dtSum,aes(xmin=MinDist, xmax = MaxDist, ymin = MinThresh, ymax = MaxThresh)) + geom_rect(aes(fill = Duration/Area))
 
 ```
