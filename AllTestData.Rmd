@@ -1,0 +1,134 @@
+---
+title: "Alpha Phase 1 Analysis"
+output:
+  pdf_document:
+    fig_caption: yes
+  html_document:
+    df_print: paged
+---
+
+```{r, include=FALSE}
+require(data.table)
+require(ggplot2)
+require(ggforce)
+require(coefplot)
+require(Rmisc)
+require(gtools)
+
+source("./util.R")
+
+useCachedData = TRUE
+```
+
+
+
+```{r, include=FALSE}
+
+cachedDataFile = "~/Desktop/OptimalQuarantine/gaen-attenuation/data/dtPoint.csv"
+if(useCachedData){
+  dtPoint = fread(cachedDataFile)
+}else{
+  dataFolder = "~/Desktop/OptimalQuarantine/gaen-attenuation/data/Alpha Test Phase 1 Data/"
+  dt = combineTestData(dataFolder)
+
+  dtPoint = splitMeasurements(dt)
+  fwrite(dtPoint, cachedDataFile, row.names = FALSE)
+}
+
+flagOutliers(dtPoint)
+
+
+```
+
+```{r}
+setnames(dtPoint, old = c("Phonemodel1\nEx:iPhoneSEwithsiliconcasefromAppleandpopsocket", "Phonemodel2\nEx:iPhoneSEwithsiliconcasefromAppleandpopsocket"),
+new = c("PhoneModel1", "PhoneModel2"))
+
+dtPoint2 = dtPoint[,list(TestID, Tester,  TimeOfNotification = TimeDetected, DurationBetween, MinAttenThresh = MinThresh, MaxAttenThresh = MaxThresh, MeanAttenThresh = MeanAtten,  DurationTotalRecorded = DurationTotalReported, DurationTotalPlanned = DurationPlanned, RecordingDevice = Device, 
+TestCategory, TestScenario, Distance, Barrier,  
+ Orientation, Notes, PhoneModel1, 
+Phone1BatteryBefore, Phone1BatteryAfter, PhoneModel2, 
+Phone2BatteryBefore, Phone2BatteryAfter, ContactDevice = OtherDevice, 
+SuspectedTestingError = Outlier)]
+
+
+
+```
+
+```{r}
+dtPoint[,TimeDetected:= as.POSIXct(TimeDetected, origin = "2001/01/01")]
+ggplot(dtPoint, aes(x = TimeDetected, fill = Tester)) + geom_histogram()
+```
+
+
+
+
+```{r, message=FALSE, warning=FALSE, width = 10, height = 18}
+dtPoint[,TestID := str_trim(TestID)]
+dtPoint[, TestID := factor(TestID, levels = mixedsort(unique(dtPoint$TestID)))]
+rowsPerPage = 15
+numRows = length(unique(dtPoint$TestID))
+
+for(page in 1:ceiling(numRows/rowsPerPage)){
+  p <- ggplot(dtPoint, aes(x = MaxThresh, fill = Outlier)) + geom_histogram() + ylim(0,5)+ xlim(25,100) + facet_grid_paginate(TestID ~ Tester, nrow = 15, ncol = length(unique(dtPoint$Tester)), page = page) + xlab("Attenuation [dB]") + ylab("Distance [m]")
+  print(p)
+}
+```
+
+```{r}
+barriers = unique(dtPoint$Barrier)
+blockingBarriers = barriers[grepl("wall", barriers, ignore.case = TRUE) |
+                            grepl("car", barriers, ignore.case = TRUE) |
+                            grepl("ceiling", barriers, ignore.case = TRUE)]
+
+
+dtPoint[, BlockingBarrier := Barrier %in% blockingBarriers]
+
+ggplot(dtPoint, aes(x = MaxThresh, y = Distance, colour = Outlier)) + geom_jitter(height = 0.08 , alpha = 0.5) + xlab("Attenuation") + facet_wrap(~BlockingBarrier, )
+
+fwrite( dtPoint[BlockingBarrier == FALSE & Outlier == FALSE & Distance > 0, list(Distance =Distance, MeanBinAttenuation = MeanAtten)], "~/Desktop/OptimalQuarantine/filteredAttenuation.csv")
+```
+
+
+
+
+
+
+```{r}
+X = dtPoint[Outlier == FALSE, .N]
+print(paste("X = ", X))
+Y = dtPoint[Outlier == FALSE & BlockingBarrier == TRUE, .N]
+print(paste("Y = ", Y))
+
+Q = dtPoint[Outlier == FALSE & Distance == 0, .N]
+print(paste("Q = ", Q))
+
+
+dtSubset = dtPoint[Outlier == FALSE & BlockingBarrier == FALSE & Distance > 0]
+print(paste("X - {Y+Q} = ", dtSubset[, .N]))
+
+nonBlockingBarriers = c("Human body in between", "Inside purse", "Inside backpack", "Inside jean pocket",  "Metal laptop/object in between")
+
+print(paste("Z = ", dtSubset[ ! Barrier %in% nonBlockingBarriers, .N]))
+
+W2 = dtSubset[ grep("elevator", TestScenario, ignore.case =  TRUE), .N]
+W3 = dtSubset[ grep("outside", TestScenario, ignore.case =  TRUE), .N]
+W1 = dtSubset[, .N] - W2 - W3
+print(paste("W1 = ", W1))
+print(paste("W2 = ", W2))
+print(paste("W3 = ", W3))
+
+print(paste("Testers: ", length(unique(dtPoint$Tester))))
+
+print(dtSubset[,.N, by = Distance])
+
+print(dtSubset[,.N, by = Orientation])
+```
+
+
+
+
+
+
+
+
