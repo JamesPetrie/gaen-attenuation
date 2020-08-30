@@ -8,6 +8,12 @@ require(foreach)
 processExposures <- function(file){
   exposures <- fromJSON(file=file)$possibleExposures
 
+  if(length(exposures) == 0){
+    return(data.table(DurationBelow = numeric(), DurationBetween = numeric(),
+                      DurationAbove = numeric(), MinThresh = numeric(), 
+                      MaxThresh = numeric(), TimeDetected = numeric(),
+                      DurationTotalReported= numeric()))
+  }
 
   dt = rbindlist(llply(exposures, function(x){
     newDt = data.table(TimeDetected = x$timeDetected,
@@ -45,7 +51,8 @@ processScenarios <- function(scenarioFile){
   colnames = unlist(unname(llply(names(testScenarios), function(x){str_replace_all(x, fixed(" "), "")})))
   setnames(testScenarios, colnames)
 
-  setnames(testScenarios, old = c("Distance(m)", "Duration(min)"), new = c("Distance", "DurationPlanned"))
+  setnames(testScenarios, old = c("Distance(m)", "Duration(min)", "PhoneCaseOn?", "Phone1batterybefore(%)","Phone1batteryafter(%)", "Phone2batterybefore(%)","Phone2batteryafter(%)"), 
+           new = c("Distance", "DurationPlanned","PhoneCaseOn", "Phone1BatteryBefore","Phone1BatteryAfter","Phone2BatteryBefore","Phone2BatteryAfter" ), skip_absent=TRUE)
 
   testScenarios[, Distance := as.numeric(Distance)]
 
@@ -71,11 +78,15 @@ combineTestData = function(dataFolder){
 
     for(file in list.files(testerDir)){
       if(grepl("json", file, fixed = TRUE)){
-        newDt = processExposures(file.path(testerDir, file))
         testDesc = str_split(str_remove(file, ".json"), "_")[[1]]
         testID = testDesc[length(testDesc)]
         device = testDesc[2]
         tester = testDesc[1]
+        
+        print(tester)
+        print(testID)
+        newDt = processExposures(file.path(testerDir, file))
+
 
         newDt[, TestID := testID]
         newDt[, Device := device]
@@ -133,3 +144,89 @@ splitMeasurements = function(dt){
   return(dtPoint)
 }
 
+removeCorruptedData = function(dt){
+  dt[Tester == "Tester17" & 
+       Barrier == "Inside/outside car" & 
+       TimeDetected <= 614731724 &
+       MaxThresh <= 40, 
+     DurationBetween := 0]
+  
+  dt[Tester == "Tester17" & 
+       Barrier == "Door" & 
+       TimeDetected <= 614721083 &
+       MaxThresh <= 40, 
+     DurationBetween := 0]
+  
+  return(dt)
+}
+
+
+
+flagOutliers = function(dtPoint){
+  dtPoint[,Outlier := FALSE]
+  
+  dtPoint[Tester == "Tester16" & 
+        TestID %in% c("B1","B2","B3","B4","B5","B6") &
+        MaxThresh < 58 &
+        TimeDetected <  615406208
+       ,Outlier := TRUE]
+  
+  dtPoint[Tester == "Tester16" & 
+            TestID %in% c("C19","C20","C21","C23","C24","C25","C26","C27","C28","C30","C31","C32","C33") &
+            MaxThresh < 58 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE]
+  
+  dtPoint[Tester == "Tester17" & 
+            TestID %in% c("E2","E3","E4","E5","E9","E10","E11","E12") &
+            MaxThresh < 50 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE]
+  
+  dtPoint[Tester == "Tester17" & 
+            TestID %in% c("E15","E16","E17","E18","E19","E23","E24","E25","E26","E27") &
+            MaxThresh < 40 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE]
+  
+  dtPoint[Tester == "Tester17" & 
+            TestID %in% c("F1", "F2", "F3", "F4", "F5") &
+            MaxThresh < 50 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE]
+  dtPoint[Tester == "Tester1" & 
+            TestID %in% c("A7", "C11", "D10", "D11", "D12") &
+            MaxThresh < 40 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE] 
+  dtPoint[Tester == "Tester1" & 
+            TestID %in% c( "E24","E25", "E26", "E27") &
+            MaxThresh < 45 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE]
+  dtPoint[Tester == "Tester1" & 
+            TestID %in% c("E1", "E2", "E3", "E4") &
+            MaxThresh < 50 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE] 
+  dtPoint[Tester == "Tester15" & 
+            TestID %in% c("C18", "C19", "C24", "C25","C44", "C45", "C46", "C47", "C51", "C52","C53", "C54") &
+            MaxThresh < 40 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE] 
+  dtPoint[Tester == "Tester15" & 
+            TestID %in% c("C26") &
+            MaxThresh < 45 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE] 
+  dtPoint[Tester == "Tester15" & 
+            TestID %in% c("F1","F2", "F3", "F4", "F5") &
+            MaxThresh < 45 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE] 
+  dtPoint[Tester == "Tester3" & 
+            TestID %in% c("C11", "C12") &
+            MaxThresh < 50 &
+            TimeDetected <  615406208
+          ,Outlier := TRUE] 
+}

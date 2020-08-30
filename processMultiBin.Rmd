@@ -1,14 +1,17 @@
 ---
 title: "Alpha Test Analysis"
-date: "`r format(Sys.time(), '%B %d, %Y')`"
 author: "James Petrie"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
-  html_notebook: default
   pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
 ---
-```{r}
+```{r, include=FALSE}
 require(data.table)
 require(ggplot2)
+require(ggforce)
 require(coefplot)
 
 source("./util.R")
@@ -16,9 +19,11 @@ source("./util.R")
 
 
 
-```{r, results="hide"}
+```{r, include=FALSE}
 dataFolder = "~/Desktop/OptimalQuarantine/gaen-attenuation/data/Alpha Test Phase 1 Data/"
 dt = combineTestData(dataFolder)
+dt = removeCorruptedData(dt)
+
 ```
 
 ```{r, include = FALSE}
@@ -27,41 +32,42 @@ dt[, DurationTotalSum := DurationBelow + DurationBetween + DurationAbove]
 ggplot(dt, aes(x = DurationTotalReported/60, y = DurationTotalSum/60, colour = DurationPlanned)) + geom_jitter(width = 1, height = 1)
 ```
 
-```{r}
+```{r fig.height=8, fig.width=6, include=FALSE}
 dtPoint = splitMeasurements(dt)
-ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Barrier)) + geom_jitter(height = 0.08, size = 2, alpha = 0.3) + xlab("Attenuation [dB]") + ylab("Distance [m]")
+dtPoint[grepl("Signal", Barrier), Barrier:= "Signal Interference"]
+#ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Barrier)) + geom_jitter(height = 0.08, size = 2, alpha = 0.3) + xlab("Attenuation [dB]") + ylab("Distance [m]") + theme(legend.position="bottom") 
+
+ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Tester)) + geom_jitter(height = 0.08, alpha = 0.8, size = 2) + xlab("Attenuation [dB]") + ylab("Distance [m]")  + facet_wrap(~Barrier, ncol = 3 )
+
 ```
 
-```{r}
-ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Tester)) + geom_jitter(height = 0.08, alpha = 0.5) + xlab("Attenuation [dB]") + ylab("Distance [m]")  + facet_wrap(~Barrier)
+```{r, include=FALSE}
+ggplot(dtPoint, aes(y= Distance, x = MaxThresh)) + geom_bin2d(bins = 13)
 ```
 
-```{r}
-ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = Device)) + geom_jitter(height = 0.08, alpha = 0.5) + xlab("Attenuation [dB]") + ylab("Distance [m]")  + facet_wrap(~Barrier)
-```
-```{r}
-ggplot(dtPoint, aes(y= Distance, x = MaxThresh, colour = OtherDevice)) + geom_jitter(height = 0.08, alpha = 0.5) + xlab("Attenuation [dB]") + ylab("Distance [m]")  + facet_wrap(~Barrier)
-```
 
-```{r}
+
+
+```{r, include=FALSE}
 dtPoint[, DistanceFactor := as.factor(Distance)]
 dtPoint[,Barrier := as.factor(Barrier)]
 model = lm(MaxThresh ~  Barrier + DistanceFactor + 0 , data= dtPoint)
 modelWithTester = lm(MaxThresh ~  Barrier + DistanceFactor + Tester + 0 , data= dtPoint)
 modelWithDevice = lm(MaxThresh ~  Barrier + DistanceFactor + Device + 0 , data= dtPoint)
-print(model)
+print(modelWithTester)
 
  
-coefplot::coefplot(model)
+#coefplot::coefplot(model)
 coefplot::coefplot(modelWithTester)
 ```
 ```{r}
 dtMonte = dtPoint[, list(Attenuation = MeanAtten, Distance, TestScenario, Barrier)]
-fwrite(dtMonte , file = "~/Desktop/OptimalQuarantine/MonteCarloData.csv")
-
+fwrite(dtMonte , file = "~/Desktop/OptimalQuarantine/gaen-attenuation/MonteCarloData.csv")
+fwrite(dtPoint,  file = "~/Desktop/OptimalQuarantine/gaen-attenuation/PointData.csv")
+fwrite(dt,  file = "~/Desktop/OptimalQuarantine/gaen-attenuation/MeasurementData.csv")
 ```
 
-```{r}
+```{r, include=FALSE}
 ggplot(dt) + geom_histogram( aes(x = TestID, y = DurationBetween, fill = Tester), stat = "identity") + labs(x="Test ID")
 
 dtTests = dt[,list( NumTests = length(unique(TestID))), by = Tester]
@@ -70,13 +76,14 @@ print(sum(dtTests$NumTests))
 ```
 
 
+```{r, message=FALSE}
+rowsPerPage = 15
+numRows = length(unique(dtPoint$TestID))
 
-```{r, include=FALSE}
-dtSum = dt[,list(Duration = sum(Duration)), by = list(MinThresh, MaxThresh, Distance)]
-dtSum[ ,MinDist := Distance -0.25]
-dtSum[, MaxDist := Distance + 0.25]
-dtSum[, Area := (MaxDist-MinDist)*(MaxThresh - MinThresh)]
-
-#ggplot(dtSum,aes(xmin=MinDist, xmax = MaxDist, ymin = MinThresh, ymax = MaxThresh)) + geom_rect(aes(fill = Duration/Area))
+for(page in 1:2){ #ceiling(numRows/rowsPerPage)){
+  p <- ggplot(dtPoint, aes(x = MaxThresh, fill = Device)) + geom_histogram() + ylim(0,5)+ xlim(25,100) + facet_grid_paginate(TestID ~ Tester, nrow = 15, ncol = length(unique(dtPoint$Tester)), page = page) + xlab("Attenuation [dB]") + ylab("Distance [m]")
+  print(p)
+}
 
 ```
+
